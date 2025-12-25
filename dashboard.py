@@ -19,7 +19,7 @@ st.markdown(
     "Track **public sentiment** across Indian political parties using news data."
 )
 
-# ------------------ PARTY FULL NAMES (✅ ADDED) ------------------
+# ------------------ PARTY FULL NAMES ------------------
 PARTY_FULL_NAMES = {
     "BJP": "Bharatiya Janata Party",
     "INC": "Indian National Congress",
@@ -57,7 +57,7 @@ st.sidebar.header("📅 Filters")
 start_date = st.sidebar.date_input("Start Date", value=date.today())
 end_date = st.sidebar.date_input("End Date", value=date.today())
 
-# ------------------ PARTY SELECT (✅ FULL NAME SHOWN) ------------------
+# ------------------ PARTY SELECT ------------------
 selected_party = st.sidebar.selectbox(
     "Select Political Party",
     ALL_PARTIES,
@@ -75,14 +75,37 @@ summary_response = (
 
 summary_df = pd.DataFrame(summary_response.data)
 
-if summary_df.empty:
-    st.warning("No sentiment data available for this party yet.")
-    st.stop()
+# ------------------ ENSURE ALL 3 SENTIMENTS ------------------
+sentiments = ["Positive", "Negative", "Neutral"]
+
+base_df = pd.DataFrame({
+    "sentiment": sentiments,
+    "total": [0, 0, 0]
+})
+
+if not summary_df.empty:
+    merged_df = base_df.merge(
+        summary_df[["sentiment", "total"]],
+        on="sentiment",
+        how="left",
+        suffixes=("_base", "")
+    )
+    merged_df["total"] = merged_df["total"].fillna(merged_df["total_base"])
+    summary_df = merged_df[["sentiment", "total"]]
+
+# Add party column
+summary_df.insert(0, "party", selected_party)
+
+# ------------------ SERIAL NUMBER FROM 1 ------------------
+summary_df.index = range(1, len(summary_df) + 1)
 
 # ------------------ SENTIMENT SUMMARY ------------------
-st.subheader(f"📌 Sentiment Summary — {selected_party} ({PARTY_FULL_NAMES[selected_party]})")
+st.subheader(
+    f"📌 Sentiment Summary — {selected_party} ({PARTY_FULL_NAMES[selected_party]})"
+)
 st.dataframe(summary_df, use_container_width=True)
 
+# ------------------ BAR GRAPH (ALL 3 BARS) ------------------
 st.subheader("📊 Sentiment Distribution")
 st.bar_chart(summary_df.set_index("sentiment")["total"])
 
