@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 from datetime import date
+import matplotlib.pyplot as plt
 
 # ------------------ SUPABASE CONFIG ------------------
 SUPABASE_URL = "https://qvtfopfumqjkztyhizpf.supabase.co"
@@ -53,7 +54,6 @@ ALL_PARTIES = list(PARTY_FULL_NAMES.keys())
 
 # ------------------ DATE FILTER ------------------
 st.sidebar.header("📅 Filters")
-
 start_date = st.sidebar.date_input("Start Date", value=date.today())
 end_date = st.sidebar.date_input("End Date", value=date.today())
 
@@ -75,23 +75,30 @@ summary_response = (
 
 summary_df = pd.DataFrame(summary_response.data)
 
-# ------------------ ENSURE ALL 3 SENTIMENTS ------------------
+# ------------------ ENSURE ALL 3 SENTIMENTS (BULLETPROOF) ------------------
 sentiments = ["Positive", "Negative", "Neutral"]
 
-base_df = pd.DataFrame({
+# Always start with base structure
+summary_df = pd.DataFrame({
     "sentiment": sentiments,
     "total": [0, 0, 0]
 })
 
-if not summary_df.empty:
-    merged_df = base_df.merge(
-        summary_df[["sentiment", "total"]],
-        on="sentiment",
-        how="left",
-        suffixes=("_base", "")
-    )
-    merged_df["total"] = merged_df["total"].fillna(merged_df["total_base"])
-    summary_df = merged_df[["sentiment", "total"]]
+if summary_response.data:
+    temp_df = pd.DataFrame(summary_response.data)
+
+    # Normalize column name
+    if "count" in temp_df.columns and "total" not in temp_df.columns:
+        temp_df = temp_df.rename(columns={"count": "total"})
+
+    if "sentiment" in temp_df.columns and "total" in temp_df.columns:
+        summary_df = summary_df.merge(
+            temp_df[["sentiment", "total"]],
+            on="sentiment",
+            how="left"
+        )
+        summary_df["total"] = summary_df["total_y"].fillna(summary_df["total_x"])
+        summary_df = summary_df[["sentiment", "total"]]
 
 # Add party column
 summary_df.insert(0, "party", selected_party)
@@ -99,15 +106,39 @@ summary_df.insert(0, "party", selected_party)
 # ------------------ SERIAL NUMBER FROM 1 ------------------
 summary_df.index = range(1, len(summary_df) + 1)
 
-# ------------------ SENTIMENT SUMMARY ------------------
+
+# ------------------ SENTIMENT SUMMARY TABLE ------------------
 st.subheader(
     f"📌 Sentiment Summary — {selected_party} ({PARTY_FULL_NAMES[selected_party]})"
 )
 st.dataframe(summary_df, use_container_width=True)
 
-# ------------------ BAR GRAPH (ALL 3 BARS) ------------------
+# ------------------ FILTER ZERO VALUES FOR CHARTS ONLY ------------------
+chart_df = summary_df[summary_df["total"] > 0]
+
+# ------------------ BAR CHART ------------------
 st.subheader("📊 Sentiment Distribution")
-st.bar_chart(summary_df.set_index("sentiment")["total"])
+
+if not chart_df.empty:
+    st.bar_chart(chart_df.set_index("sentiment")["total"])
+else:
+    st.info("No sentiment data available to display.")
+
+# ------------------ PIE CHART ------------------
+st.subheader("🌗 Sentiment Share")
+
+if not chart_df.empty:
+    fig, ax = plt.subplots()
+    ax.pie(
+        chart_df["total"],
+        labels=chart_df["sentiment"],
+        autopct="%1.1f%%",
+        startangle=90
+    )
+    ax.axis("equal")
+    st.pyplot(fig)
+else:
+    st.info("No sentiment data available to display.")
 
 # ------------------ FETCH LATEST HEADLINES ------------------
 st.subheader("📰 Latest Headlines")
